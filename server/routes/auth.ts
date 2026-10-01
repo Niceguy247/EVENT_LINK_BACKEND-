@@ -13,11 +13,25 @@ router.post('/register', async (req, res) => {
   try {
     const { email, password, fullName } = req.body;
 
-    if (!email || !password || !fullName) {
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      typeof fullName !== 'string' ||
+      !email.trim() ||
+      !password ||
+      !fullName.trim()
+    ) {
       return res.status(400).json({ error: 'Email, password, and fullName are required.' });
     }
 
     const emailClean = email.toLowerCase().trim();
+    if (emailClean.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean)) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+    if (password.length < 12 || password.length > 128 || fullName.trim().length > 100) {
+      return res.status(400).json({ error: 'Password must be 12-128 characters and fullName at most 100 characters.' });
+    }
+
     const passwordHash = await hashPassword(password);
     const mockPublicKey = `GCKEY${Array.from({ length: 48 }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('')}`;
     const userId = `USR-${Math.floor(100000 + Math.random() * 900000)}`;

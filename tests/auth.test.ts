@@ -35,6 +35,32 @@ test('registration stores a salted password hash, not the submitted password', a
   assert.equal(await verifyPassword(password, storedUser.passwordHash), true);
 });
 
+test('registration rejects malformed fields without throwing', async (context) => {
+  inMemoryStore.users.clear();
+  const server = app.listen(0);
+  context.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const { port } = server.address() as AddressInfo;
+
+  for (const body of [
+    { email: 42, password: 'a sufficiently long password', fullName: 'Test' },
+    { email: 'not-an-email', password: 'a sufficiently long password', fullName: 'Test' },
+    { email: 'test@example.test', password: [], fullName: 'Test' },
+    { email: 'test@example.test', password: 'a sufficiently long password', fullName: {} },
+  ]) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    assert.equal(response.status, 400);
+  }
+
+  assert.equal(inMemoryStore.users.size, 0);
+});
+
 test('login rejects an incorrect password for an existing account', async (context) => {
   inMemoryStore.users.clear();
   const email = 'login@example.test';
