@@ -19,10 +19,15 @@ async function createAndFundCustodialAccount(): Promise<{ publicKey: string; sec
   const publicKey = keypair.publicKey();
   const secretKey = keypair.secret();
 
+  let response: Response;
   try {
-    await fetch(`https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`);
-  } catch (error) {
-    console.warn('Stellar Friendbot funding notice:', error);
+    response = await fetch(`https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`);
+  } catch {
+    throw new Error('Unable to reach Stellar Friendbot to fund the custodial account.');
+  }
+  if (!response.ok) {
+    const details = (await response.text()).trim().slice(0, 300);
+    throw new Error(`Stellar Friendbot funding failed with HTTP ${response.status}${details ? `: ${details}` : '.'}`);
   }
 
   return { publicKey, secretKey };
