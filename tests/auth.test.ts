@@ -165,3 +165,16 @@ test('profile endpoint requires and honors a valid bearer token', async (context
   assert.equal(profileResponse.status, 200);
   assert.equal((await profileResponse.json()).user.email, email);
 });
+
+test('private user directory endpoint is not exposed', async (context) => {
+  const server = app.listen(0);
+  context.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const { port } = server.address() as AddressInfo;
+
+  const response = await fetch(`http://127.0.0.1:${port}/api/auth/users`);
+
+  assert.equal(response.status, 404);
+});

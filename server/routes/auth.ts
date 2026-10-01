@@ -218,25 +218,4 @@ router.get('/me', async (req, res) => {
   }
 });
 
-// GET All Users (Database Inspection Endpoint)
-router.get('/users', async (_req, res) => {
-  try {
-    const memoryUsers = Array.from(inMemoryStore.users.values());
-    if (isConnectedToMongo) {
-      const dbUsers = await User.find().sort({ createdAt: -1 });
-      return res.json({
-        totalMongoUsers: dbUsers.length,
-        totalMemoryUsers: memoryUsers.length,
-        users: dbUsers,
-      });
-    }
-    return res.json({
-      totalMemoryUsers: memoryUsers.length,
-      users: memoryUsers,
-    });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message || 'Failed to list users' });
-  }
-});
-
 export default router;
