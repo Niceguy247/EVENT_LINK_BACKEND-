@@ -171,6 +171,8 @@ async function getTransporter(): Promise<{ transporter: nodemailer.Transporter; 
  * Helper to dispatch email via Nodemailer & return live preview URL
  */
 async function deliverMail(to: string, subject: string, html: string): Promise<boolean> {
+  if (process.env.NODE_ENV === 'test') return false;
+
   try {
     const { transporter: activeTransporter, senderEmail } = await getTransporter();
     const info = await activeTransporter.sendMail({
