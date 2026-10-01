@@ -4,9 +4,8 @@ import { EventModel } from '../models/Event';
 
 const router = Router();
 
-const eventStringLimits: Record<string, number> = {
-  id: 100,
-  title: 150,
+const eventTextLimits: Record<string, number> = {
+  title: 120,
   tagline: 500,
   category: 100,
   date: 100,
@@ -14,75 +13,98 @@ const eventStringLimits: Record<string, number> = {
   location: 200,
   venueName: 200,
   imageUrl: 2048,
-  organizerName: 150,
+  organizerName: 120,
   organizerStellarAddress: 100,
 };
-const allowedEventFields = new Set([...Object.keys(eventStringLimits), 'royaltyPercentage', 'isFeatured', 'tiers']);
-const allowedTierFields = new Set(['id', 'name', 'priceUSD', 'priceNGN', 'priceXLM', 'perks', 'totalAvailable', 'remaining']);
 
-export function validateEventPayload(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return 'Event payload must be an object.';
+function validateEventPayload(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return 'Event payload must be an object.';
+  }
 
-  const event = payload as Record<string, unknown>;
-  const unknownEventFields = Object.keys(event).filter((field) => !allowedEventFields.has(field));
-  if (unknownEventFields.length) return `Unknown event field: ${unknownEventFields[0]}.`;
+  const event = value as Record<string, unknown>;
+  const allowedFields = new Set([...Object.keys(eventTextLimits), 'royaltyPercentage', 'isFeatured', 'tiers']);
+  if (Object.keys(event).some((field) => !allowedFields.has(field))) {
+    return 'Event payload contains unsupported fields.';
+  }
 
-  for (const [field, maxLength] of Object.entries(eventStringLimits)) {
-    const value = event[field];
-    if (value !== undefined && (typeof value !== 'string' || value.length > maxLength)) {
-      return `${field} must be a string of at most ${maxLength} characters.`;
+  for (const [field, maxLength] of Object.entries(eventTextLimits)) {
+    const fieldValue = event[field];
+    if (field === 'title' || field === 'date') {
+      if (typeof fieldValue !== 'string' || !fieldValue.trim() || fieldValue.trim().length > maxLength) {
+        return `${field} must be a non-empty string no longer than ${maxLength} characters.`;
+      }
+    } else if (fieldValue !== undefined && (typeof fieldValue !== 'string' || fieldValue.length > maxLength)) {
+      return `${field} must be a string no longer than ${maxLength} characters.`;
     }
   }
-  if (typeof event.title !== 'string' || !event.title.trim()) return 'A title is required.';
-  if (typeof event.date !== 'string' || !event.date.trim() || Number.isNaN(Date.parse(event.date))) {
-    return 'A valid event date is required.';
+
+  if (Number.isNaN(Date.parse((event.date as string).trim()))) {
+    return 'date must be a valid date.';
   }
-  if (typeof event.imageUrl === 'string' && event.imageUrl) {
+
+  if (event.imageUrl !== undefined) {
     try {
-      const imageUrl = new URL(event.imageUrl);
+      const imageUrl = new URL(event.imageUrl as string);
       if (!['http:', 'https:'].includes(imageUrl.protocol)) return 'imageUrl must use HTTP or HTTPS.';
     } catch {
       return 'imageUrl must be a valid URL.';
     }
   }
+
   if (event.royaltyPercentage !== undefined &&
-      (typeof event.royaltyPercentage !== 'number' || !Number.isFinite(event.royaltyPercentage) || event.royaltyPercentage < 0 || event.royaltyPercentage > 100)) {
+      (typeof event.royaltyPercentage !== 'number' || !Number.isFinite(event.royaltyPercentage) ||
+       event.royaltyPercentage < 0 || event.royaltyPercentage > 100)) {
     return 'royaltyPercentage must be a number between 0 and 100.';
   }
-  if (event.isFeatured !== undefined && typeof event.isFeatured !== 'boolean') return 'isFeatured must be a boolean.';
+  if (event.isFeatured !== undefined && typeof event.isFeatured !== 'boolean') {
+    return 'isFeatured must be a boolean.';
+  }
+
   if (event.tiers !== undefined) {
     if (!Array.isArray(event.tiers) || event.tiers.length > 100) return 'tiers must be an array of at most 100 items.';
-    for (const [index, tierValue] of event.tiers.entries()) {
-      if (!tierValue || typeof tierValue !== 'object' || Array.isArray(tierValue)) return `tiers[${index}] must be an object.`;
-      const tier = tierValue as Record<string, unknown>;
-      const unknownTierFields = Object.keys(tier).filter((field) => !allowedTierFields.has(field));
-      if (unknownTierFields.length) return `Unknown tier field: ${unknownTierFields[0]}.`;
-      if (tier.id !== undefined && (typeof tier.id !== 'string' || tier.id.length > 100)) {
-        return `tiers[${index}].id must be a string of at most 100 characters.`;
+    for (const tier of event.tiers) {
+      if (!tier || typeof tier !== 'object' || Array.isArray(tier)) return 'Each tier must be an object.';
+      const tierData = tier as Record<string, unknown>;
+      const allowedTierFields = new Set(['id', 'name', 'priceUSD', 'priceNGN', 'priceXLM', 'perks', 'totalAvailable', 'remaining']);
+      if (Object.keys(tierData).some((field) => !allowedTierFields.has(field))) return 'Tier contains unsupported fields.';
+      if (typeof tierData.name !== 'string' || !tierData.name.trim() || tierData.name.length > 100) {
+        return 'Each tier must have a name between 1 and 100 characters.';
       }
-      if (typeof tier.name !== 'string' || !tier.name.trim() || tier.name.length > 100) {
-        return `tiers[${index}].name must be a string of at most 100 characters.`;
+      if (tierData.id !== undefined && (typeof tierData.id !== 'string' || tierData.id.length > 100)) {
+        return 'Tier id must be a string no longer than 100 characters.';
       }
-      for (const priceField of ['priceUSD', 'priceNGN', 'priceXLM']) {
-        const price = tier[priceField];
-        if (price !== undefined && (typeof price !== 'number' || !Number.isFinite(price) || price < 0)) {
-          return `tiers[${index}].${priceField} must be a non-negative number.`;
+
+      const priceFields = ['priceUSD', 'priceNGN', 'priceXLM'];
+      const definedPrices = priceFields.filter((field) => tierData[field] !== undefined);
+      if (definedPrices.length === 0) return 'Each tier must include at least one price.';
+      for (const field of definedPrices) {
+        const price = tierData[field];
+        if (typeof price !== 'number' || !Number.isFinite(price) || price < 0 || price > 1_000_000_000_000) {
+          return `${field} must be a finite non-negative number.`;
         }
       }
-      if (tier.perks !== undefined && (!Array.isArray(tier.perks) || tier.perks.length > 30 || tier.perks.some((perk) => typeof perk !== 'string' || perk.length > 200))) {
-        return `tiers[${index}].perks must contain at most 30 strings of at most 200 characters.`;
+
+      if (tierData.perks !== undefined &&
+          (!Array.isArray(tierData.perks) || tierData.perks.length > 50 ||
+           tierData.perks.some((perk) => typeof perk !== 'string' || perk.length > 200))) {
+        return 'Tier perks must be an array of at most 50 strings, each no longer than 200 characters.';
       }
-      for (const capacityField of ['totalAvailable', 'remaining']) {
-        const capacity = tier[capacityField];
-        if (capacity !== undefined && (typeof capacity !== 'number' || !Number.isInteger(capacity) || capacity < 0 || capacity > 1_000_000)) {
-          return `tiers[${index}].${capacityField} must be a non-negative integer.`;
+
+      for (const field of ['totalAvailable', 'remaining']) {
+        const capacity = tierData[field];
+        if (capacity !== undefined &&
+            (typeof capacity !== 'number' || !Number.isInteger(capacity) || capacity < 0 || capacity > 1_000_000_000)) {
+          return `Tier ${field} must be a non-negative integer.`;
         }
       }
-      if (typeof tier.totalAvailable === 'number' && typeof tier.remaining === 'number' && tier.remaining > tier.totalAvailable) {
-        return `tiers[${index}].remaining cannot exceed totalAvailable.`;
+      if (typeof tierData.totalAvailable === 'number' && typeof tierData.remaining === 'number' &&
+          tierData.remaining > tierData.totalAvailable) {
+        return 'Tier remaining capacity cannot exceed totalAvailable.';
       }
     }
   }
+
   return null;
 }
 
@@ -189,9 +211,10 @@ router.get('/', async (_req: Request, res: Response) => {
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const eventData = req.body;
-    const validationError = validateEventPayload(eventData);
+    const validationError = validateEventPayload(req.body);
     if (validationError) return res.status(400).json({ error: validationError });
+
+    const eventData = req.body;
 
     const eventId = eventData.id || `evt-${Math.floor(100000 + Math.random() * 900000)}`;
     const fullEvent = {
