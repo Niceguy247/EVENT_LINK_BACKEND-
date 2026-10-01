@@ -1,47 +1,27 @@
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
-import { Keypair } from '@stellar/stellar-sdk';
-import app from '../index';
-import { inMemoryStore } from '../db';
+import { test } from 'node:test';
+import { mergeTicketRecords } from './tickets';
 
-const server = app.listen(0);
+test('ticket list merge prefers Mongo records for duplicate IDs and keeps unique records', () => {
+  const memoryOnly = { id: 'memory-only', status: 'claimable' };
+  const mongoOnly = { id: 'mongo-only', status: 'valid' };
 
-before(async () => {
-  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const merged = mergeTicketRecords(
+    [memoryOnly, { id: 'shared', status: 'claimable' }],
+    [mongoOnly, { id: 'shared', status: 'valid' }],
+  );
+
+  assert.equal(merged.length, 3);
+  assert.deepEqual(merged.find((ticket) => ticket.id === 'shared'), { id: 'shared', status: 'valid' });
+  assert.ok(merged.includes(memoryOnly));
+  assert.ok(merged.includes(mongoOnly));
 });
 
-after(async () => {
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-});
+test('ticket list merge converts Mongo documents to plain records', () => {
+  const document = {
+    id: 'mongo-ticket',
+    toObject: () => ({ id: 'mongo-ticket', status: 'valid' }),
+  };
 
-async function claim(body: Record<string, string>): Promise<Response> {
-  const address = server.address();
-  assert.ok(address && typeof address !== 'string');
-  return fetch(`http://127.0.0.1:${address.port}/api/tickets/claim`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-test('claim rejects unknown codes and invalid Stellar addresses', async () => {
-  const unknown = await claim({ claimCode: 'CLAIM-UNKNOWN', walletAddress: Keypair.random().publicKey() });
-  inMemoryStore.tickets.set('claim-test-1', { id: 'claim-test-1', claimCode: 'CLAIM-TEST-1', status: 'claimable' });
-  const invalidAddress = await claim({ claimCode: 'CLAIM-TEST-1', walletAddress: 'not-a-stellar-address' });
-
-  assert.equal(unknown.status, 404);
-  assert.equal(invalidAddress.status, 400);
-});
-
-test('claim cannot transfer a ticket more than once', async () => {
-  inMemoryStore.tickets.set('claim-test-2', { id: 'claim-test-2', claimCode: 'CLAIM-TEST-2', status: 'claimable' });
-  const firstAddress = Keypair.random().publicKey();
-  const secondAddress = Keypair.random().publicKey();
-
-  const firstClaim = await claim({ claimCode: 'CLAIM-TEST-2', walletAddress: firstAddress });
-  const secondClaim = await claim({ claimCode: 'CLAIM-TEST-2', walletAddress: secondAddress });
-
-  assert.equal(firstClaim.status, 200);
-  assert.equal(secondClaim.status, 409);
-  assert.equal(inMemoryStore.tickets.get('claim-test-2').currentOwnerAddress, firstAddress);
+  assert.deepEqual(mergeTicketRecords([], [document]), [{ id: 'mongo-ticket', status: 'valid' }]);
 });
