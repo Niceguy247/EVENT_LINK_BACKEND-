@@ -87,7 +87,7 @@ GitHub Actions runs a clean install and TypeScript typecheck for pull requests a
 - Use HTTPS and restrict CORS to the actual frontend origin before deploying.
 - The current event and ticket fallback store, webhook deduplication set, and webhook logs are process-local, not durable.
 - Review authentication and authorization on every route before production. Do not expose development/admin endpoints publicly without access controls.
-- The Stellar helper targets Testnet. Do not treat generated demo references or fallback transaction hashes as confirmed settlement.
+- The Stellar helper defaults to Testnet; configure `STELLAR_NETWORK` to select Testnet or Public. Do not treat generated demo references or fallback transaction hashes as confirmed settlement.
 
 ## Contributing
 
