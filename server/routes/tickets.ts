@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { StrKey } from '@stellar/stellar-sdk';
 import { Ticket } from '../models/Ticket';
 import { inMemoryStore, isConnectedToMongo } from '../db';
 import {
@@ -96,41 +97,54 @@ router.post('/purchase', async (req, res) => {
 // 2. Claim Ticket Endpoint
 router.post('/claim', async (req, res) => {
   try {
-    const { claimCode, walletAddress, buyerEmail, buyerName } = req.body;
+    const { claimCode, walletAddress } = req.body;
+
+    if (typeof claimCode !== 'string' || !claimCode.trim()) {
+      return res.status(400).json({ error: 'A claim code is required.' });
+    }
+    if (typeof walletAddress !== 'string' || !StrKey.isValidEd25519PublicKey(walletAddress)) {
+      return res.status(400).json({ error: 'A valid Stellar public key is required.' });
+    }
 
     let ticket: any = null;
-    for (const t of inMemoryStore.tickets.values()) {
-      if (t.claimCode === claimCode) {
-        ticket = t;
-        break;
+
+    if (isConnectedToMongo) {
+      ticket = await Ticket.findOneAndUpdate(
+        { claimCode, status: 'claimable' },
+        { $set: { status: 'valid', currentOwnerAddress: walletAddress } },
+        { new: true },
+      );
+
+      if (!ticket) {
+        const existingTicket = await Ticket.exists({ claimCode });
+        return res.status(existingTicket ? 409 : 404).json({
+          error: existingTicket ? 'Ticket has already been claimed.' : 'Ticket claim code not found.',
+        });
       }
-    }
 
-    if (!ticket && isConnectedToMongo) {
-      ticket = await Ticket.findOne({ claimCode });
-    }
-
-    if (!ticket) {
-      // Build transient ticket object for claim email dispatch
-      ticket = {
-        eventTitle: 'DRIPS Soroban Hackathon Summit',
-        id: `TCK-${claimCode}`,
-        claimCode,
-      };
+      inMemoryStore.tickets.set(ticket.id, ticket);
     } else {
+      ticket = Array.from(inMemoryStore.tickets.values()).find((storedTicket) => storedTicket.claimCode === claimCode);
+
+      if (!ticket) {
+        return res.status(404).json({ error: 'Ticket claim code not found.' });
+      }
+      if (ticket.status !== 'claimable') {
+        return res.status(409).json({ error: 'Ticket has already been claimed.' });
+      }
+
       ticket.status = 'valid';
       ticket.currentOwnerAddress = walletAddress;
       inMemoryStore.tickets.set(ticket.id, ticket);
-      if (isConnectedToMongo && ticket.save) {
-        await ticket.save();
-      }
     }
 
-    const emailToUse = buyerEmail || ticket.buyerEmail || 'attendee@drips.org';
-    const nameToUse = buyerName || ticket.buyerName || 'Valued Attendee';
+    const emailToUse = ticket.buyerEmail;
+    const nameToUse = ticket.buyerName || 'Valued Attendee';
 
     // Trigger claim progress email
-    const emailSent = await sendClaimConfirmationEmail(emailToUse, nameToUse, ticket, walletAddress);
+    const emailSent = emailToUse
+      ? await sendClaimConfirmationEmail(emailToUse, nameToUse, ticket, walletAddress)
+      : false;
 
     return res.json({
       message: 'Ticket claimed successfully to self-custody wallet on Stellar.',
