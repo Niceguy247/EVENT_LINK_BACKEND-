@@ -31,6 +31,9 @@ router.post('/register', async (req, res) => {
     if (password.length < 12 || password.length > 128 || fullName.trim().length > 100) {
       return res.status(400).json({ error: 'Password must be 12-128 characters and fullName at most 100 characters.' });
     }
+    if (inMemoryStore.users.has(emailClean)) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
 
     const passwordHash = await hashPassword(password);
     const mockPublicKey = `GCKEY${Array.from({ length: 48 }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('')}`;

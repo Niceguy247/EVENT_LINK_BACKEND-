@@ -61,6 +61,30 @@ test('registration rejects malformed fields without throwing', async (context) =
   assert.equal(inMemoryStore.users.size, 0);
 });
 
+test('registration returns conflict for an existing in-memory email', async (context) => {
+  inMemoryStore.users.clear();
+  const server = app.listen(0);
+  context.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const { port } = server.address() as AddressInfo;
+  const body = {
+    email: 'duplicate@example.test',
+    password: 'a sufficiently long password',
+    fullName: 'Duplicate User',
+  };
+  const request = () => fetch(`http://127.0.0.1:${port}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  assert.equal((await request()).status, 201);
+  assert.equal((await request()).status, 409);
+  assert.equal(inMemoryStore.users.size, 1);
+});
+
 test('login rejects an incorrect password for an existing account', async (context) => {
   inMemoryStore.users.clear();
   const email = 'login@example.test';
