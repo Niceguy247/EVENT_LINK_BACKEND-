@@ -174,12 +174,23 @@ router.post('/login', async (req, res) => {
 // GET Current Live User Profile from Database
 router.get('/me', async (req, res) => {
   try {
-    const email = req.query.email as string;
-    if (!email) {
-      return res.status(400).json({ error: 'Email parameter required' });
+    const authorization = req.get('authorization');
+    if (!authorization?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required.' });
     }
 
-    const emailClean = email.toLowerCase().trim();
+    let tokenEmail: string | undefined;
+    try {
+      const claims = jwt.verify(authorization.slice('Bearer '.length), JWT_SECRET);
+      tokenEmail = typeof claims === 'object' && claims !== null && typeof claims.email === 'string'
+        ? claims.email
+        : undefined;
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token.' });
+    }
+    if (!tokenEmail) return res.status(401).json({ error: 'Invalid or expired token.' });
+
+    const emailClean = tokenEmail.toLowerCase().trim();
     let user: any = null;
 
     if (isConnectedToMongo) {

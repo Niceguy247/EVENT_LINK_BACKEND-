@@ -130,3 +130,38 @@ test('login rejects an unknown account without creating one', async (context) =>
   assert.equal(response.status, 401);
   assert.equal(inMemoryStore.users.has(email), false);
 });
+
+test('profile endpoint requires and honors a valid bearer token', async (context) => {
+  inMemoryStore.users.clear();
+  const email = 'profile@example.test';
+  inMemoryStore.users.set(email, {
+    id: 'USR-profile-test',
+    email,
+    fullName: 'Profile Test',
+    custodialPublicKey: 'GPROFILEKEY',
+    passwordHash: await hashPassword('the-correct-password'),
+  });
+  const server = app.listen(0);
+  context.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const { port } = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const anonymousResponse = await fetch(`${baseUrl}/api/auth/me?email=${encodeURIComponent(email)}`);
+  assert.equal(anonymousResponse.status, 401);
+
+  const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: 'the-correct-password' }),
+  });
+  const { token } = await loginResponse.json() as { token: string };
+  const profileResponse = await fetch(`${baseUrl}/api/auth/me`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+
+  assert.equal(profileResponse.status, 200);
+  assert.equal((await profileResponse.json()).user.email, email);
+});
