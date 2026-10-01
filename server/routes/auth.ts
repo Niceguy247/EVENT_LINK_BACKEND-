@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { inMemoryStore, isConnectedToMongo } from '../db';
 import { sendRegistrationEmail } from '../services/emailService';
+import { hashPassword, verifyPassword } from '../services/password';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'eventlink_production_jwt_secret_key_2026';
@@ -12,11 +13,29 @@ router.post('/register', async (req, res) => {
   try {
     const { email, password, fullName } = req.body;
 
-    if (!email || !password || !fullName) {
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      typeof fullName !== 'string' ||
+      !email.trim() ||
+      !password ||
+      !fullName.trim()
+    ) {
       return res.status(400).json({ error: 'Email, password, and fullName are required.' });
     }
 
     const emailClean = email.toLowerCase().trim();
+    if (emailClean.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean)) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
+    if (password.length < 12 || password.length > 128 || fullName.trim().length > 100) {
+      return res.status(400).json({ error: 'Password must be 12-128 characters and fullName at most 100 characters.' });
+    }
+    if (inMemoryStore.users.has(emailClean)) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+
+    const passwordHash = await hashPassword(password);
     const mockPublicKey = `GCKEY${Array.from({ length: 48 }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('')}`;
     const userId = `USR-${Math.floor(100000 + Math.random() * 900000)}`;
 
@@ -41,7 +60,7 @@ router.post('/register', async (req, res) => {
 
         const newUser = new User({
           email: emailClean,
-          passwordHash: password,
+          passwordHash,
           fullName: fullName.trim(),
           custodialPublicKey: mockPublicKey,
           custodialSecretKey: 'SCKEYTEMPORARYDEMOSECRETKEY2026',
@@ -66,6 +85,7 @@ router.post('/register', async (req, res) => {
         id: userId,
         _id: userId,
         email: emailClean,
+        passwordHash,
         fullName: fullName.trim(),
         custodialPublicKey: mockPublicKey,
         createdAt: new Date().toISOString(),
@@ -119,6 +139,14 @@ router.post('/login', async (req, res) => {
     }
 
     if (dbUser) {
+      if (
+        typeof password !== 'string' ||
+        typeof dbUser.passwordHash !== 'string' ||
+        !(await verifyPassword(password, dbUser.passwordHash))
+      ) {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+      }
+
       const userPayload = {
         id: dbUser._id || dbUser.id || `USR-${Math.floor(100000 + Math.random() * 900000)}`,
         email: dbUser.email,
@@ -137,38 +165,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // If user not found in MongoDB, auto-create profile for seamless login experience
-    const mockPublicKey = `GCKEY${Array.from({ length: 48 }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('')}`;
-    const newMongoUser = {
-      id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
-      email: emailClean,
-      fullName: (req.body.fullName || emailClean.split('@')[0]).replace('.', ' ').toUpperCase(),
-      custodialPublicKey: mockPublicKey,
-    };
-
-    inMemoryStore.users.set(emailClean, newMongoUser);
-
-    if (isConnectedToMongo) {
-      try {
-        await new User({
-          email: emailClean,
-          passwordHash: password || 'defaultpass',
-          fullName: newMongoUser.fullName,
-          custodialPublicKey: mockPublicKey,
-          custodialSecretKey: 'SCKEYDEMOSECRETKEY2026',
-        }).save();
-      } catch {
-        // Ignore duplicate save
-      }
-    }
-
-    const token = jwt.sign({ id: newMongoUser.id, email: emailClean }, JWT_SECRET, { expiresIn: '7d' });
-
-    return res.json({
-      message: 'Account initialized & logged in.',
-      token,
-      user: newMongoUser,
-    });
+    return res.status(401).json({ error: 'Invalid email or password.' });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'Login failed' });
   }
@@ -177,12 +174,23 @@ router.post('/login', async (req, res) => {
 // GET Current Live User Profile from Database
 router.get('/me', async (req, res) => {
   try {
-    const email = req.query.email as string;
-    if (!email) {
-      return res.status(400).json({ error: 'Email parameter required' });
+    const authorization = req.get('authorization');
+    if (!authorization?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required.' });
     }
 
-    const emailClean = email.toLowerCase().trim();
+    let tokenEmail: string | undefined;
+    try {
+      const claims = jwt.verify(authorization.slice('Bearer '.length), JWT_SECRET);
+      tokenEmail = typeof claims === 'object' && claims !== null && typeof claims.email === 'string'
+        ? claims.email
+        : undefined;
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token.' });
+    }
+    if (!tokenEmail) return res.status(401).json({ error: 'Invalid or expired token.' });
+
+    const emailClean = tokenEmail.toLowerCase().trim();
     let user: any = null;
 
     if (isConnectedToMongo) {
@@ -207,27 +215,6 @@ router.get('/me', async (req, res) => {
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'Failed to fetch user' });
-  }
-});
-
-// GET All Users (Database Inspection Endpoint)
-router.get('/users', async (_req, res) => {
-  try {
-    const memoryUsers = Array.from(inMemoryStore.users.values());
-    if (isConnectedToMongo) {
-      const dbUsers = await User.find().sort({ createdAt: -1 });
-      return res.json({
-        totalMongoUsers: dbUsers.length,
-        totalMemoryUsers: memoryUsers.length,
-        users: dbUsers,
-      });
-    }
-    return res.json({
-      totalMemoryUsers: memoryUsers.length,
-      users: memoryUsers,
-    });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message || 'Failed to list users' });
   }
 });
 
