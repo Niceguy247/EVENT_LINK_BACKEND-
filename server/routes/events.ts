@@ -115,19 +115,17 @@ router.post('/', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
     };
 
-    // Save in memory store
-    inMemoryStore.events.set(eventId, fullEvent);
-
-    // Save in MongoDB if connected
     if (isConnectedToMongo) {
       try {
         const newEventObj = new EventModel(fullEvent);
         await newEventObj.save();
       } catch (dbErr) {
         console.warn('MongoDB event save warning:', dbErr);
+        return res.status(503).json({ error: 'Event persistence is unavailable. Please retry.' });
       }
     }
 
+    inMemoryStore.events.set(eventId, fullEvent);
     console.log(`[DB EVENT SAVED] Created event "${fullEvent.title}" (ID: ${eventId})`);
 
     return res.status(201).json({
