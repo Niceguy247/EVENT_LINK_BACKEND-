@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { inMemoryStore, isConnectedToMongo } from '../db';
 import { sendRegistrationEmail } from '../services/emailService';
+import { hashPassword } from '../services/password';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'eventlink_production_jwt_secret_key_2026';
@@ -17,6 +18,7 @@ router.post('/register', async (req, res) => {
     }
 
     const emailClean = email.toLowerCase().trim();
+    const passwordHash = await hashPassword(password);
     const mockPublicKey = `GCKEY${Array.from({ length: 48 }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('')}`;
     const userId = `USR-${Math.floor(100000 + Math.random() * 900000)}`;
 
@@ -41,7 +43,7 @@ router.post('/register', async (req, res) => {
 
         const newUser = new User({
           email: emailClean,
-          passwordHash: password,
+          passwordHash,
           fullName: fullName.trim(),
           custodialPublicKey: mockPublicKey,
           custodialSecretKey: 'SCKEYTEMPORARYDEMOSECRETKEY2026',
@@ -66,6 +68,7 @@ router.post('/register', async (req, res) => {
         id: userId,
         _id: userId,
         email: emailClean,
+        passwordHash,
         fullName: fullName.trim(),
         custodialPublicKey: mockPublicKey,
         createdAt: new Date().toISOString(),
