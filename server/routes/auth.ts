@@ -148,38 +148,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // If user not found in MongoDB, auto-create profile for seamless login experience
-    const mockPublicKey = `GCKEY${Array.from({ length: 48 }, () => Math.floor(Math.random() * 16).toString(16).toUpperCase()).join('')}`;
-    const newMongoUser = {
-      id: `USR-${Math.floor(100000 + Math.random() * 900000)}`,
-      email: emailClean,
-      fullName: (req.body.fullName || emailClean.split('@')[0]).replace('.', ' ').toUpperCase(),
-      custodialPublicKey: mockPublicKey,
-    };
-
-    inMemoryStore.users.set(emailClean, newMongoUser);
-
-    if (isConnectedToMongo) {
-      try {
-        await new User({
-          email: emailClean,
-          passwordHash: password || 'defaultpass',
-          fullName: newMongoUser.fullName,
-          custodialPublicKey: mockPublicKey,
-          custodialSecretKey: 'SCKEYDEMOSECRETKEY2026',
-        }).save();
-      } catch {
-        // Ignore duplicate save
-      }
-    }
-
-    const token = jwt.sign({ id: newMongoUser.id, email: emailClean }, JWT_SECRET, { expiresIn: '7d' });
-
-    return res.json({
-      message: 'Account initialized & logged in.',
-      token,
-      user: newMongoUser,
-    });
+    return res.status(401).json({ error: 'Invalid email or password.' });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'Login failed' });
   }
