@@ -15,6 +15,16 @@ const amountPatterns = {
   stellar: /^\d{1,12}(?:\.\d{1,7})? XLM$/,
 };
 
+export function mergeTicketRecords(memoryTickets: any[], databaseTickets: any[]): any[] {
+  const ticketsById = new Map<string, any>();
+  memoryTickets.forEach((ticket) => ticketsById.set(ticket.id, ticket));
+  databaseTickets.forEach((ticket) => {
+    const record = typeof ticket.toObject === 'function' ? ticket.toObject() : ticket;
+    ticketsById.set(record.id, record);
+  });
+  return Array.from(ticketsById.values());
+}
+
 // 1. Purchase Ticket Endpoint
 router.post('/purchase', async (req, res) => {
   try {
@@ -164,7 +174,7 @@ router.get('/', async (_req, res) => {
     const memoryList = Array.from(inMemoryStore.tickets.values());
     if (isConnectedToMongo) {
       const dbTickets = await Ticket.find().sort({ createdAt: -1 });
-      return res.json([...memoryList, ...dbTickets]);
+      return res.json(mergeTicketRecords(memoryList, dbTickets));
     }
     return res.json(memoryList);
   } catch (error: any) {
