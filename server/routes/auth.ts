@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import { inMemoryStore, isConnectedToMongo } from '../db';
 import { sendRegistrationEmail } from '../services/emailService';
-import { hashPassword } from '../services/password';
+import { hashPassword, verifyPassword } from '../services/password';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'eventlink_production_jwt_secret_key_2026';
@@ -122,6 +122,14 @@ router.post('/login', async (req, res) => {
     }
 
     if (dbUser) {
+      if (
+        typeof password !== 'string' ||
+        typeof dbUser.passwordHash !== 'string' ||
+        !(await verifyPassword(password, dbUser.passwordHash))
+      ) {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+      }
+
       const userPayload = {
         id: dbUser._id || dbUser.id || `USR-${Math.floor(100000 + Math.random() * 900000)}`,
         email: dbUser.email,
