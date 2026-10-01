@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import type { TicketStatus, PaymentProvider } from '../../src/types';
+import type { TicketStatus, PaymentProvider } from '../types';
 
 export interface ITicket extends Document {
   id: string;

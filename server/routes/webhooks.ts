@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { mintStellarTicket, SOROBAN_CONTRACT_ID } from '../../src/services/stellar';
+import { mintStellarTicket, SOROBAN_CONTRACT_ID } from '../services/stellar';
 import { inMemoryStore, isConnectedToMongo } from '../db';
 import { Ticket } from '../models/Ticket';
-import type { IssuedTicket } from '../../src/types';
+import type { IssuedTicket } from '../types';
 
 const router = Router();
 
