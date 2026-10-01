@@ -180,6 +180,11 @@ INITIAL_EVENTS.forEach((evt) => {
   inMemoryStore.events.set(evt.id, evt);
 });
 
+export async function persistEvent(event: any, saveToDatabase?: () => Promise<unknown>): Promise<void> {
+  if (saveToDatabase) await saveToDatabase();
+  inMemoryStore.events.set(event.id, event);
+}
+
 /**
  * GET /api/events - Retrieve all events live from database
  */
@@ -218,23 +223,20 @@ router.post('/', async (req: Request, res: Response) => {
       createdAt: new Date().toISOString(),
     };
 
-    // Save in memory store
-    inMemoryStore.events.set(eventId, fullEvent);
-
-    // Save in MongoDB if connected
-    if (isConnectedToMongo) {
-      try {
-        const newEventObj = new EventModel(fullEvent);
-        await newEventObj.save();
-      } catch (dbErr) {
-        console.warn('MongoDB event save warning:', dbErr);
-      }
+    try {
+      await persistEvent(
+        fullEvent,
+        isConnectedToMongo ? () => new EventModel(fullEvent).save() : undefined,
+      );
+    } catch (dbErr) {
+      console.warn('MongoDB event save failed:', dbErr);
+      return res.status(503).json({ error: 'Event persistence failed. Please retry.' });
     }
 
     console.log(`[DB EVENT SAVED] Created event "${fullEvent.title}" (ID: ${eventId})`);
 
     return res.status(201).json({
-      message: 'Event created and saved persistently in database.',
+      message: 'Event created successfully.',
       event: fullEvent,
     });
   } catch (error: any) {
